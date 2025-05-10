@@ -5,12 +5,63 @@ import { useRouter } from "next/navigation";
 
 export default function SignUp() {
   const [step, setStep] = useState(1);
-  const [method, setMethod] = useState("email"); // Default to email
+  const [signUpMethod, setSignUpMethod] = useState("otp"); // 'otp' or 'password'
+  const [method, setMethod] = useState("email"); // 'phone' or 'email'
   const [email, setEmail] = useState("");
   const [mobile, setMobile] = useState("");
+  const [password, setPassword] = useState("");
   const [otp, setOtp] = useState(["", "", "", ""]);
   const [timer, setTimer] = useState(60); // Timer for resend OTP
   const router = useRouter();
+
+  // API call to register user with password
+  const handleRegisterWithPassword = async () => {
+    if (method === "email" && !email) {
+      alert("Please enter your email");
+      return;
+    }
+    if (method === "phone" && !mobile) {
+      alert("Please enter your mobile number");
+      return;
+    }
+    if (!password) {
+      alert("Please enter your password");
+      return;
+    }
+
+    const payload =
+      method === "email" ? { email, password } : { mobile, password };
+    try {
+      const response = await fetch(
+        "http://localhost:9000/api/v1/learner/register",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
+      const data = await response.json();
+      if (!response.ok || data.status !== "success") {
+        throw new Error(data.message || "Failed to register user");
+      }
+      console.log("User registered:", data);
+      // After successful registration, request OTP
+      setStep(signUpMethod === "otp" ? 3 : 4); // Step 3 for OTP flow, Step 4 for password flow
+      setTimer(60); // Reset timer
+      const interval = setInterval(() => {
+        setTimer((prev) => {
+          if (prev <= 1) {
+            clearInterval(interval);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } catch (error) {
+      console.error("Error registering user:", error);
+      alert(error.message || "Failed to register user. Please try again.");
+    }
+  };
 
   // API call to register OTP
   const handleSendOtp = async () => {
@@ -23,8 +74,7 @@ export default function SignUp() {
       return;
     }
 
-    const payload =
-      method === "email" ? { email, mobile: "" } : { email: "", mobile };
+    const payload = method === "email" ? { email } : { mobile };
     try {
       const response = await fetch(
         "http://localhost:9000/api/v1/learner/register-otp",
@@ -38,9 +88,8 @@ export default function SignUp() {
       if (!response.ok || data.status !== "success") {
         throw new Error(data.message || "Failed to send OTP");
       }
-      alert(data);
       console.log("OTP sent:", data);
-      setStep(3);
+      setStep(signUpMethod === "otp" ? 3 : 4); // Step 3 for OTP flow, Step 4 for password flow
       setTimer(60); // Reset timer
       const interval = setInterval(() => {
         setTimer((prev) => {
@@ -64,7 +113,6 @@ export default function SignUp() {
       alert("Please enter a valid 4-digit OTP");
       return;
     }
-    console.log(typeof otpValue);
 
     const payload =
       method === "email"
@@ -84,12 +132,11 @@ export default function SignUp() {
         throw new Error(data.message || "Failed to verify OTP");
       }
       console.log("OTP verified:", data);
-      alert(data);
       // Store the token for future authenticated requests (e.g., in localStorage)
       if (data.token) {
         localStorage.setItem("authToken", data.token);
       }
-      // Redirect to the next step (e.g., the topic selection flow)
+      // Redirect to the homepage
       router.push("/"); // Adjust this to the next route in your app
     } catch (error) {
       console.error("Error verifying OTP:", error);
@@ -127,24 +174,24 @@ export default function SignUp() {
             <h1 className="text-2xl font-bold mb-4">Sign up</h1>
             <div className="flex space-x-4 mb-6">
               <button
-                onClick={() => setMethod("phone")}
+                onClick={() => setSignUpMethod("password")}
                 className={`flex-1 py-2 rounded-full border ${
-                  method === "phone"
+                  signUpMethod === "password"
                     ? "bg-teal-500 text-white"
                     : "border-gray-300 text-gray-700"
                 }`}
               >
-                Phone
+                Phone/Email & Password
               </button>
               <button
-                onClick={() => setMethod("email")}
+                onClick={() => setSignUpMethod("otp")}
                 className={`flex-1 py-2 rounded-full border ${
-                  method === "email"
+                  signUpMethod === "otp"
                     ? "bg-teal-500 text-white"
                     : "border-gray-300 text-gray-700"
                 }`}
               >
-                Email
+                Phone/Email & OTP
               </button>
             </div>
             <p className="text-sm text-gray-500 mb-4">
@@ -155,7 +202,7 @@ export default function SignUp() {
               onClick={() => setStep(2)}
               className="w-full py-3 bg-teal-500 text-white rounded-full"
             >
-              {method === "phone" ? "Enter your Phone" : "Enter your Email"}
+              Next
             </button>
           </div>
         )}
@@ -205,20 +252,33 @@ export default function SignUp() {
                 className="w-full py-2 px-4 border rounded-lg mb-4"
               />
             )}
+            {signUpMethod === "password" && (
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter your password"
+                className="w-full py-2 px-4 border rounded-lg mb-4"
+              />
+            )}
             <p className="text-sm text-gray-500 mb-4">
               By signing up, you agree to our Terms of Use and Privacy Policy.
               You may receive SMS notifications from us and can opt out anytime.
             </p>
             <button
-              onClick={handleSendOtp}
+              onClick={
+                signUpMethod === "otp"
+                  ? handleSendOtp
+                  : handleRegisterWithPassword
+              }
               className="w-full py-3 bg-teal-500 text-white rounded-full"
             >
-              Get OTP
+              {signUpMethod === "otp" ? "Get OTP" : "Register"}
             </button>
           </div>
         )}
 
-        {step === 3 && (
+        {(step === 3 || step === 4) && (
           <div>
             <button onClick={() => setStep(2)} className="text-teal-500 mb-4">
               ←
